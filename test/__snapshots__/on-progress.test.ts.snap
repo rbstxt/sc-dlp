@@ -1,0 +1,12 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`progress events received in correct order 1`] = `
+{
+  "arrayBuffer": ArrayBuffer [SHA-256 a935c688b44b2d912a08f050aa5fe1ffa4c69236679a562538b661ad397388d4],
+  "created": "2020-10-16T22:12:28.000Z",
+  "modified": "2022-06-13T19:17:32.000Z",
+  "shared": "2020-10-16T22:35:53.000Z",
+  "title": "Bouncing",
+  "type": "sb3",
+}
+`;
