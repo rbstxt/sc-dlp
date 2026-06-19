@@ -2,7 +2,7 @@
 
 A high-performance command-line tool for downloading Scratch and TurboWarp projects. Supports projects from Scratch 1.4 (sb), 2.0 (sb2), 3.0 (sb3), and TurboWarp Share (sha256).
 
-`sc-dlp` is an independent, derivative project designed for robust project archival, analysis, and research.
+`sc-dlp` is a fork of [forkphorus/sb-downloader](https://github.com/forkphorus/sb-downloader), redesigned for robust project archival, analysis, and research.
 
 ## Features
 
