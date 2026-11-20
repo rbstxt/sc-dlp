@@ -48,6 +48,10 @@ export interface Options {
     projectToken?: string;
     /** Number of pages to fetch in parallel. */
     concurrency?: number;
+    /** Optional warning callback (used instead of console.warn when provided). */
+    onWarning?: (message: string) => void;
+    /** Optional pre-fetched metadata to avoid duplicate API requests. */
+    prefetchedMetadata?: ProjectMetadata & { assetMapping?: Record<string, string> };
 }
 
 export interface SB2Project {

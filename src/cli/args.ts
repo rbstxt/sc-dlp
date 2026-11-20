@@ -23,14 +23,18 @@ Options:
  logout                        Log out from Scratch
  config [options...]           Manage configuration (use --help for more)
  deleteaccount                 Download projects from account deletion page
- --help                        Shows this screen
- --language CODE               Override language for search results (default: en)\n  --project-token TOKEN         Token to access private projects
+ --help, -h                    Shows this screen
+ --language CODE               Override language for search results (default: en)
+ --project-token TOKEN         Token to access private projects
  --playlist-start NUMBER       Playlist item to start at (default is 1)
  --playlist-end NUMBER         Playlist item to end at (default is last)
  --playlist-items ITEMS        Playlist items to download. Specify indices separated
                                by commas like: 1,2,5,10-15
  -I ITEMS                      Alias for --playlist-items
- --format EXT                  Output file extension (default: sb3)
+ --page NUMBER                 Fetch a specific page from a collection
+ --limit NUMBER                Maximum number of projects to fetch from a collection
+ -l NUMBER                     Alias for --limit
+ --format EXT                  Output file extension (default: auto sb/sb2/sb3)
  --no-assets                   Do not download any assets
  -a                            Alias for --no-assets
  --json-only                   Download only the project.json file (implies --format json)
@@ -45,13 +49,25 @@ Options:
  -t                            Alias for --write-thumbnail
  --thumbnail-size WIDTHxHEIGHT
                                Thumbnail size (default: 9999x9999)
-  -l                           Alias for --limit
-  --verbose                    Show more information
-  -v                           Alias for --verbose
+ --verbose                     Show more information
+ -v                            Alias for --verbose
 `;
 
 export const printHelp = () => {
     console.log(HELP.trim());
+};
+
+const parseIntOption = (flag: string, raw: string | undefined, min: number, fallback: number): number => {
+    if (raw === undefined) {
+        console.warn(kleur.yellow(`Missing value for ${flag}; using ${fallback}.`));
+        return fallback;
+    }
+    const parsed = parseInt(raw, 10);
+    if (isNaN(parsed) || parsed < min) {
+        console.warn(kleur.yellow(`Invalid value for ${flag}: "${raw}" (must be >= ${min}); using ${fallback}.`));
+        return fallback;
+    }
+    return parsed;
 };
 
 export const parseArguments = (args: string[]): ParsedArgs => {
@@ -97,42 +113,52 @@ export const parseArguments = (args: string[]): ParsedArgs => {
             break;
         } else if (arg === "deleteaccount") {
             parsedArgs.deleteAccount = true;
-        } else if (arg === "--help") {
+        } else if (arg === "--help" || arg === "-h") {
             parsedArgs.help = true;
         } else if (arg === "--language") {
-            parsedArgs.language = args[++i];
+            parsedArgs.language = args[++i] ?? null;
         } else if (arg === "--project-token") {
-            parsedArgs.projectToken = args[++i];
+            parsedArgs.projectToken = args[++i] ?? null;
         } else if (arg === "--playlist-start") {
-            parsedArgs.playlistStart = parseInt(args[++i], 10);
+            parsedArgs.playlistStart = parseIntOption(arg, args[++i], 1, 1);
         } else if (arg === "--playlist-end") {
-            parsedArgs.playlistEnd = parseInt(args[++i], 10);
+            parsedArgs.playlistEnd = parseIntOption(arg, args[++i], 1, Infinity);
         } else if (arg === "--playlist-items" || arg === "-I") {
             const items = args[++i];
-            parsedArgs.playlistItems = parsePlaylistItems(items);
+            if (items) {
+                parsedArgs.playlistItems = parsePlaylistItems(items);
+            } else {
+                console.warn(kleur.yellow(`Missing value for ${arg}.`));
+            }
         } else if (arg === "--format") {
-            parsedArgs.format = args[++i];
+            parsedArgs.format = args[++i] ?? null;
         } else if (arg === "--no-assets" || arg === "-a") {
             parsedArgs.noAssets = true;
         } else if (arg === "--json-only" || arg === "-j") {
             parsedArgs.jsonOnly = true;
             if (!parsedArgs.format) parsedArgs.format = "json";
         } else if (arg === "--retries") {
-            parsedArgs.retries = parseInt(args[++i], 10);
+            parsedArgs.retries = parseIntOption(arg, args[++i], 0, 5);
         } else if (arg === "--concurrency" || arg === "-c" || arg === "--jobs") {
-            parsedArgs.jobs = parseInt(args[++i], 10);
+            parsedArgs.jobs = parseIntOption(arg, args[++i], 1, 1);
         } else if (arg === "--conflict") {
-            parsedArgs.conflictAction = args[++i] as any;
+            const action = args[++i];
+            if (action === "overwrite" || action === "skip" || action === "keep-both") {
+                parsedArgs.conflictAction = action;
+            } else {
+                console.warn(kleur.yellow(`Invalid --conflict action: "${action ?? ""}". Expected overwrite, skip, or keep-both.`));
+            }
         } else if (arg === "--limit" || arg === "-l") {
-            parsedArgs.limit = parseInt(args[++i], 10);
+            parsedArgs.limit = parseIntOption(arg, args[++i], 1, Infinity);
         } else if (arg === "--mtime" || arg === "-m") {
             parsedArgs.mtime = true;
         } else if (arg === "--write-thumbnail" || arg === "-t") {
             parsedArgs.writeThumbnail = true;
         } else if (arg === "--thumbnail-size") {
-            parsedArgs.thumbnailSize = args[++i];
+            parsedArgs.thumbnailSize = args[++i] || "9999x9999";
         } else if (arg === "--page") {
-            parsedArgs.page = parseInt(args[++i], 10);
+            const val = parseIntOption(arg, args[++i], 1, 0);
+            parsedArgs.page = val >= 1 ? val : null;
         } else if (arg === "--verbose" || arg === "-v") {
             parsedArgs.verbose = true;
         } else if (arg.startsWith("-")) {

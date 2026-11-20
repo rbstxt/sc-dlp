@@ -29,15 +29,19 @@ const downloadFromScratchURLWithToken = async (id: string | number, baseUrl: str
     let lastError: any;
     for (let attempt = 0; attempt < 5; attempt++) {
         try {
-            if (options.onProgress) {
-                options.onProgress("metadata", 0, 1);
-            }
-
             const refresh = attempt > 0;
-            const meta = await getProjectMetadata(id, { ...options, refresh });
+            let meta = !refresh ? options.prefetchedMetadata : undefined;
 
-            if (options.onProgress) {
-                options.onProgress("metadata", 1, 1, meta.title);
+            if (!meta) {
+                if (options.onProgress) {
+                    options.onProgress("metadata", 0, 1);
+                }
+
+                meta = await getProjectMetadata(id, { ...options, refresh });
+
+                if (options.onProgress) {
+                    options.onProgress("metadata", 1, 1, meta.title);
+                }
             }
             throwIfAborted(options);
 
@@ -90,15 +94,26 @@ export const downloadProjectFromID = async (id: string | number, options?: Optio
 
     if (options.projectToken) {
         const projectUrl = `${config.urls.projects}/${id}?token=${options.projectToken}`;
-        // NO sessionId for projects server
-        const headers: Record<string, string> = { ...environment.headers };
         const project = await downloadProjectFromURL(projectUrl, options);
-        // Metadata might be missing here if we don't fetch it, but that's what 'manual mode' implies.
-        // We could still try to fetch metadata if we want title etc.
-        try {
-            const meta = await getProjectMetadata(id, options);
-            project.title = meta.title;
-        } catch (e) { }
+        const meta = options.prefetchedMetadata;
+        if (meta) {
+            if (meta.title) project.title = meta.title;
+            if (meta.history) {
+                if (meta.history.modified) project.modified = meta.history.modified;
+                if (meta.history.created) project.created = meta.history.created;
+                if (meta.history.shared) project.shared = meta.history.shared;
+            }
+        } else {
+            try {
+                const fetchedMeta = await getProjectMetadata(id, options);
+                project.title = fetchedMeta.title;
+                if (fetchedMeta.history) {
+                    if (fetchedMeta.history.modified) project.modified = fetchedMeta.history.modified;
+                    if (fetchedMeta.history.created) project.created = fetchedMeta.history.created;
+                    if (fetchedMeta.history.shared) project.shared = fetchedMeta.history.shared;
+                }
+            } catch (e) { }
+        }
         return project;
     }
 

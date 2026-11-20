@@ -1,13 +1,16 @@
 import { Options, ProjectSummary } from "../../types.js";
 import { parseOptions } from "../../utils.js";
 import { getProjectMetadata } from "../project.js";
-import { fetchProjectList, fetchAllProjectPages } from "../list.js";
+import { fetchAllProjectPages } from "../list.js";
 import { fetchLovesList, fetchRecentlyViewed } from "../user.js";
 import { loadConfig } from "../../../cli/config.js";
 
 export const handleShorthand = async (url: string, options?: Options, getProjectsFromPlaylistURL?: (url: string, options?: Options) => Promise<ProjectSummary[] | null>): Promise<ProjectSummary[] | null> => {
     let match;
-    let lowerUrl = url.toLowerCase();
+    const lowerUrl = url.toLowerCase();
+    const config = loadConfig();
+    const apiBase = config.urls.api;
+    const projectsAllBase = config.urls.projectsAll;
 
     // recently viewed
     if (lowerUrl === "recently" || lowerUrl === "recent" || lowerUrl === "recentlyviewed" || lowerUrl === "recentlyview") {
@@ -18,14 +21,14 @@ export const handleShorthand = async (url: string, options?: Options, getProject
     match = url.match(/^@([^/]+)\/(loves|love|lovs|lov)$/i);
     if (match) {
         const username = match[1];
-        return fetchLovesList(`https://scratch.mit.edu/projects/all/${username}/loves/`, options);
+        return fetchLovesList(`${projectsAllBase}/${username}/loves/`, options);
     }
 
     // @username/favorites
     match = url.match(/^@([^/]+)\/(favorites|favorite|favs|fav)$/i);
     if (match) {
         const username = match[1];
-        return fetchAllProjectPages(`https://api.scratch.mit.edu/users/${username}/favorites`, options);
+        return fetchAllProjectPages(`${apiBase}/users/${username}/favorites`, options);
     }
 
     // @username shorthand (must be checked after specific @ paths)
@@ -33,7 +36,7 @@ export const handleShorthand = async (url: string, options?: Options, getProject
     if (match) {
         const username = match[1];
         return fetchAllProjectPages(
-            `https://api.scratch.mit.edu/users/${username}/projects`,
+            `${apiBase}/users/${username}/projects`,
             options,
         );
     }
@@ -42,7 +45,7 @@ export const handleShorthand = async (url: string, options?: Options, getProject
     match = url.match(/^(\d+)\/(remixes|remix)$/i);
     if (match) {
         const id = match[1];
-        return fetchProjectList(`https://api.scratch.mit.edu/projects/${id}/remixes`, options);
+        return fetchAllProjectPages(`${apiBase}/projects/${id}/remixes`, options);
     }
 
     // mystuff shorthand
@@ -61,11 +64,17 @@ export const handleShorthand = async (url: string, options?: Options, getProject
         }
     }
 
+    // Search shorthand
+    match = url.match(/^search\/(.+)$/i);
+    if (match) {
+        const query = match[1];
+        return fetchAllProjectPages(`${apiBase}/search/projects?mode=popular&q=${encodeURIComponent(query)}`, options);
+    }
+
     // Trending shorthand
     match = url.match(/^trending\/(.+)$/i);
     if (match) {
         const query = match[1];
-        const apiBase = loadConfig().urls.api;
         return fetchAllProjectPages(`${apiBase}/search/projects?mode=trending&q=${encodeURIComponent(query)}`, options);
     }
 
@@ -73,7 +82,6 @@ export const handleShorthand = async (url: string, options?: Options, getProject
     match = url.match(/^popular\/(.+)$/i);
     if (match) {
         const query = match[1];
-        const apiBase = loadConfig().urls.api;
         return fetchAllProjectPages(`${apiBase}/search/projects?mode=popular&q=${encodeURIComponent(query)}`, options);
     }
 
@@ -94,7 +102,6 @@ export const handleShorthand = async (url: string, options?: Options, getProject
         }
 
         if (category === "all") category = "*";
-        const apiBase = loadConfig().urls.api;
         return fetchAllProjectPages(`${apiBase}/explore/projects?q=${encodeURIComponent(category)}&mode=${mode}`, options);
     }
 
@@ -102,7 +109,7 @@ export const handleShorthand = async (url: string, options?: Options, getProject
     match = url.match(/^studio\/(\d+)$/i);
     if (match) {
         const studioId = match[1];
-        return fetchAllProjectPages(`https://api.scratch.mit.edu/studios/${studioId}/projects`, options);
+        return fetchAllProjectPages(`${apiBase}/studios/${studioId}/projects`, options);
     }
 
     // Project shorthand

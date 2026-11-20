@@ -1,4 +1,4 @@
-import * as SBDL from './src/export-node.js';
+import * as SBDL from './lib/bundle-node.cjs';
 
 console.time('Download project');
 SBDL.downloadProjectFromID('60917032', {

@@ -5,22 +5,49 @@
   "type": "module",
   "keywords": [
     "scratch",
-    "downloader"
+    "turbowarp",
+    "sb3",
+    "sb2",
+    "downloader",
+    "cli"
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sc-dlp/sc-dlp.git"
+    "url": "git+https://github.com/rbstxt/sc-dlp.git"
   },
   "bugs": {
-    "url": "https://github.com/sc-dlp/sc-dlp/issues"
+    "url": "https://github.com/rbstxt/sc-dlp/issues"
   },
-  "homepage": "https://github.com/sc-dlp/sc-dlp#readme",
+  "homepage": "https://github.com/rbstxt/sc-dlp#readme",
+  "engines": {
+    "node": ">=18.17.0"
+  },
   "main": "./lib/bundle-node.cjs",
-  "types": "./lib/types/downloader.d.ts",
+  "module": "./lib/bundle-node.mjs",
+  "types": "./lib/types/export-node.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./lib/types/export-node.d.ts",
+        "default": "./lib/bundle-node.mjs"
+      },
+      "require": {
+        "types": "./lib/types/export-node.d.ts",
+        "default": "./lib/bundle-node.cjs"
+      }
+    }
+  },
+  "files": [
+    "lib/bundle-node.cjs",
+    "lib/bundle-node.mjs",
+    "lib/cli.cjs",
+    "lib/types"
+  ],
   "scripts": {
-    "build": "rollup -c",
-    "prepublishOnly": "rollup -c && tsc",
+    "clean": "node -e \"import('node:fs').then(fs => fs.rmSync('lib', { recursive: true, force: true }))\"",
+    "build": "npm run clean && rollup -c && tsc --emitDeclarationOnly && node -e \"import('node:fs').then(fs => fs.chmodSync('lib/cli.cjs', 0o755))\"",
+    "prepublishOnly": "npm run build",
     "test": "vitest run"
   },
   "bin": {

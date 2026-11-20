@@ -43,9 +43,14 @@ export async function checkStatus() {
             console.error(e);
         }
     } else if (config.token) {
+        if (!config.username) {
+            console.log(kleur.yellow("x-token is configured, but username is missing."));
+            return;
+        }
         try {
-            const userUrl = `${config.urls.api}/users/${config.username}/`;
-            const res = await fetch(userUrl, {
+            // Use an endpoint that requires a valid x-token (unlike /users/:name/ which is public)
+            const authCheckUrl = `${config.urls.api}/users/${encodeURIComponent(config.username)}/messages/count`;
+            const res = await fetch(authCheckUrl, {
                 "headers": {
                     "x-token": config.token
                 },
@@ -54,10 +59,12 @@ export async function checkStatus() {
 
             if (res.ok) {
                 console.log(kleur.green("Logged in via x-token (Limited Permissions):"));
-                console.log(`  Username: ${kleur.bold(config.username || "Unknown")}`);
+                console.log(`  Username: ${kleur.bold(config.username)}`);
                 console.log(kleur.yellow("  Note: Access to 'My Stuff' is restricted."));
-            } else {
+            } else if (res.status === 401 || res.status === 403) {
                 console.log(kleur.yellow("x-token is invalid or expired."));
+            } else {
+                console.error(kleur.red(`Failed to verify x-token: HTTP ${res.status}`));
             }
         } catch (e) {
             console.error(kleur.red("An error occurred while checking token status"));

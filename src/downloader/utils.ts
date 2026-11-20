@@ -66,8 +66,10 @@ export const makeAssetProgressTarget = (options: Options, initialTotal = 0) => {
             }
         } else if (!timeout) {
             timeout = setTimeout(() => {
-                throwIfAborted(options);
                 timeout = null;
+                if (options.signal && options.signal.aborted) {
+                    return;
+                }
                 if (options.onProgress) {
                     if (lastAsset) {
                         options.onProgress("assets", loadedAssets, totalAssets, lastAsset);

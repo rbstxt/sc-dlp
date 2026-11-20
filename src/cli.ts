@@ -1,35 +1,37 @@
 import kleur from "kleur";
-import * as cliProgress from "cli-progress";
 import * as SBDL from "./export-node.js";
 import { parseArguments, printHelp } from "./cli/args.js";
-import { extractProjectID, extractProjectInfo, isURL, logError } from "./cli/utils.js";
+import { extractProjectInfo, isURL } from "./cli/utils.js";
 import { makeDownloader } from "./cli/download.js";
+import { createDisplayManager } from "./cli/download/display.js";
+import { createConflictResolver } from "./cli/download/conflict.js";
 import { login, checkStatus, logout } from "./cli/auth.js";
 import { loadConfig } from "./cli/config.js";
 import { handleConfigCommand } from "./cli/config_command.js";
+import { closeProxyAgent } from "./fetch-wrapper.js";
 
-const run = async () => {
+const run = async (): Promise<number> => {
   const parsedArgs = parseArguments(process.argv.slice(2));
   const config = loadConfig();
 
   if (parsedArgs.config) {
-    await handleConfigCommand(process.argv.slice(3));
-    return;
+    await handleConfigCommand(parsedArgs.inputs);
+    return 0;
   }
 
   if (parsedArgs.login) {
     await login();
-    return;
+    return 0;
   }
 
   if (parsedArgs.status) {
     await checkStatus();
-    return;
+    return 0;
   }
 
   if (parsedArgs.logout) {
     await logout();
-    return;
+    return 0;
   }
 
   if (parsedArgs.deleteAccount) {
@@ -38,10 +40,11 @@ const run = async () => {
 
   if (parsedArgs.inputs.length === 0 || parsedArgs.help) {
     printHelp();
-    return;
+    return 0;
   }
 
-  const allProjectsToDownload = [];
+  const allProjectsToDownload: any[] = [];
+  const isTTY = Boolean(process.stdout.isTTY);
 
   for (const input of parsedArgs.inputs) {
     let projectList: any[] = [];
@@ -50,10 +53,27 @@ const run = async () => {
     const projectToken = info ? info.token : null;
     const projectUrlStr = info ? info.projectUrl : null;
 
-    const isPlaylist = !id && !projectUrlStr || (input !== id && !projectToken && !projectUrlStr && (isURL(input) || input.startsWith("@") || input.includes("/") || input.toLowerCase().startsWith("mystuff") || input.toLowerCase().startsWith("recent") || input.toLowerCase().startsWith("featured") || input.toLowerCase().startsWith("trending") || input.toLowerCase().startsWith("popular") || input.toLowerCase().startsWith("explore")));
+    const lowerInput = input.toLowerCase();
+    const isPlaylist =
+      (!id && !projectUrlStr) ||
+      (input !== id &&
+        !projectToken &&
+        !projectUrlStr &&
+        (isURL(input) ||
+          input.startsWith("@") ||
+          input.includes("/") ||
+          lowerInput.startsWith("mystuff") ||
+          lowerInput.startsWith("recent") ||
+          lowerInput.startsWith("featured") ||
+          lowerInput.startsWith("trending") ||
+          lowerInput.startsWith("popular") ||
+          lowerInput.startsWith("explore") ||
+          lowerInput.startsWith("search")));
 
     if (isPlaylist) {
-      process.stdout.write(kleur.dim(`Checking if ${input} is a playlist... `));
+      if (isTTY) {
+        process.stdout.write(kleur.dim(`Checking if ${input} is a playlist... `));
+      }
       try {
         const playlistProjects = await SBDL.getProjectsFromPlaylistURL(input, {
           token: config.token,
@@ -64,14 +84,18 @@ const run = async () => {
           page: parsedArgs.page ?? undefined,
           concurrency: parsedArgs.jobs,
           onProgress: (type, loaded) => {
-            if (type === 'metadata') {
-              process.stdout.write(`\r${kleur.dim(`Checking if ${input} is a playlist... Found ${loaded} projects.`)}`);
+            if (type === "metadata" && isTTY) {
+              process.stdout.write(
+                `\r${kleur.dim(`Checking if ${input} is a playlist... Found ${loaded} projects.`)}`
+              );
             }
-          }
+          },
         });
         if (playlistProjects) {
           projectList = playlistProjects;
-          process.stdout.write("\r\x1b[K");
+          if (isTTY) {
+            process.stdout.write("\r\x1b[K");
+          }
           console.log(kleur.green(`Found ${projectList.length} projects.`));
           if (parsedArgs.verbose) {
             projectList.forEach((p, idx) => {
@@ -83,28 +107,27 @@ const run = async () => {
             });
           }
           if (projectList.length === 0) {
-            // Keep it as an empty list to avoid falling back to single project download
-            // which would likely fail anyway with IDs like "trending/all"
-            projectList = [null]; // Placeholder to prevent fallback below
-            projectList.pop(); // Make it empty again
-            continue; // Move to next input
+            // Avoid falling back to single project download for valid but empty playlists
+            continue;
           }
-        } else {
-          process.stdout.write("\r");
+        } else if (isTTY) {
+          process.stdout.write("\r\x1b[K");
         }
       } catch (e: any) {
-        process.stdout.write("\r");
+        if (isTTY) {
+          process.stdout.write("\r\x1b[K");
+        }
         console.error(kleur.red(`Error: ${e.message}`));
-        if (parsedArgs.verbose) {
+        if (parsedArgs.verbose && e.stack) {
           console.error(kleur.dim(e.stack));
         }
-        return;
+        return 1;
       }
     }
 
     if (projectList.length === 0) {
       projectList.push({
-        id: id || input,
+        id: projectUrlStr ? null : id || input,
         projectUrl: projectUrlStr,
         isSingle: true,
       });
@@ -135,88 +158,115 @@ const run = async () => {
 
   if (allProjectsToDownload.length === 0) {
     console.warn(kleur.yellow("No projects to download after filtering."));
-    return;
+    return 0;
   }
 
-  const multibar = new cliProgress.MultiBar(
-    {
-      clearOnComplete: false,
-      hideCursor: true,
-      format: "{id} {bar} {percentage}% | {value}/{total} | {info}",
-      barCompleteChar: "\u2588",
-      barIncompleteChar: "\u2591",
-      forceRedraw: true,
-      fps: 10,
-      noTTYOutput: !process.stdout.isTTY,
-    },
-    cliProgress.Presets.shades_grey,
-  );
+  const display = createDisplayManager();
+  const conflictResolver = createConflictResolver(display);
 
   const downloaderOptions = {
     ...parsedArgs,
-    proxy: config.proxy,
+    conflictAction: parsedArgs.conflictAction || config.conflictAction,
     language: parsedArgs.language || config.language || "en",
   };
-  const downloadProject = makeDownloader(downloaderOptions, multibar);
+  const downloadProject = makeDownloader(downloaderOptions, display, conflictResolver);
 
   const queue = [...allProjectsToDownload];
-  const workers = [];
-  const numWorkers = Math.min(parsedArgs.jobs, queue.length);
-
   const totalToDownload = allProjectsToDownload.length;
-  let downloadedCount = 0;
+  const numWorkers = Math.max(1, Math.min(parsedArgs.jobs, queue.length));
 
-  const totalBar = multibar.create(totalToDownload, 0, {
-    id: kleur.bold().green("[total]".padEnd(12)),
-    info: `0/${totalToDownload}`,
-  });
+  let startedCount = 0;
+  let completedCount = 0;
+  let succeededCount = 0;
+  let skippedCount = 0;
+  let failedCount = 0;
 
-  const worker = async () => {
+  const totalBar = totalToDownload > 1 ? display.createTotalBar(totalToDownload) : null;
+  // Allocate one fixed bar slot per worker to avoid MultiBar remove/create cursor desyncs
+  const workerBars = Array.from({ length: numWorkers }, (_, idx) =>
+    display.createWorkerBar(numWorkers > 1 ? `[worker-${idx + 1}]` : "[download]")
+  );
+
+  const formatTotalInfo = () => {
+    const parts = [`${completedCount}/${totalToDownload}`];
+    if (skippedCount > 0) parts.push(`${skippedCount} skipped`);
+    if (failedCount > 0) parts.push(`${failedCount} failed`);
+    return parts.join(" | ");
+  };
+
+  const worker = async (workerIndex: number) => {
+    const bar = workerBars[workerIndex];
     while (queue.length > 0) {
       const project = queue.shift();
       if (!project) break;
 
-      const projectIndex = ++downloadedCount;
+      const projectIndex = ++startedCount;
       if (totalToDownload > 1) {
-        multibar.log(
+        const label = project.id || project.projectUrl || "project";
+        display.log(
           `${kleur.blue("[batch]".padEnd(12))} ${kleur.bold(
-            `[${projectIndex}/${totalToDownload}]`,
-          )} Starting: ${kleur.yellow(project.id)}\n`,
+            `[${projectIndex}/${totalToDownload}]`
+          )} Starting: ${kleur.yellow(String(label))}\n`
         );
       }
 
-      await downloadProject(project);
-      totalBar.update(downloadedCount, { info: `${downloadedCount}/${totalToDownload}` });
+      const status = await downloadProject(project, bar);
+      completedCount++;
+      if (status === "downloaded") {
+        succeededCount++;
+      } else if (status === "skipped") {
+        skippedCount++;
+      } else {
+        failedCount++;
+      }
+
+      totalBar?.update(completedCount, { info: formatTotalInfo() });
+    }
+
+    if (numWorkers > 1) {
+      bar.setTotal(1);
+      bar.update(1, {
+        id: kleur.dim(`[worker-${workerIndex + 1}]`.padEnd(12)),
+        info: "idle",
+      });
     }
   };
 
-  for (let i = 0; i < numWorkers; i++) {
-    workers.push(worker());
+  try {
+    const workers = Array.from({ length: numWorkers }, (_, i) => worker(i));
+    await Promise.all(workers);
+
+    if (totalToDownload > 0) {
+      if (failedCount === 0) {
+        const summary =
+          skippedCount > 0
+            ? `Processed ${totalToDownload} projects (${succeededCount} downloaded, ${skippedCount} skipped).`
+            : `All ${totalToDownload} projects processed successfully.`;
+        display.log(`${kleur.green("[success]".padEnd(12))} ${summary}\n`);
+      } else {
+        display.log(
+          `${kleur.yellow("[summary]".padEnd(12))} Processed ${totalToDownload} projects (${succeededCount} downloaded, ${skippedCount} skipped, ${failedCount} failed).\n`
+        );
+      }
+    }
+  } finally {
+    display.stop();
+    SBDL.clearAssetCache();
+    await closeProxyAgent();
   }
 
-  await Promise.all(workers);
-
-  if (totalToDownload > 0) {
-    const successPrefix = `[success]`.padEnd(12);
-    multibar.log(
-      `${kleur.green(successPrefix)} All ${totalToDownload} projects processed successfully.\n`,
-    );
-  }
-
-  // Wait a bit to ensure all logs reach the terminal before stopping the multibar
-  await new Promise((resolve) => setTimeout(resolve, 200));
-  multibar.stop();
-  SBDL.clearAssetCache();
+  return failedCount > 0 ? 1 : 0;
 };
 
 run()
-  .then(() => {
-    process.exit(0);
+  .then((exitCode) => {
+    process.exit(exitCode);
   })
-  .catch((err) => {
+  .catch(async (err) => {
     console.error(kleur.red(`\nSomething went wrong: ${err.message}`));
-    if (process.env.DEBUG || process.argv.includes("--verbose")) {
+    if (process.env.DEBUG || process.argv.includes("--verbose") || process.argv.includes("-v")) {
       console.error(kleur.dim(err.stack));
     }
+    await closeProxyAgent();
     process.exit(1);
   });

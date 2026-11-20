@@ -1,7 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import commonjs from "@rollup/plugin-commonjs";
-import { nodeResolve } from "@rollup/plugin-node-resolve";
 import license from "rollup-plugin-license";
 import typescript from "@rollup/plugin-typescript";
 
@@ -11,32 +9,48 @@ const packageJSONText = fs.readFileSync(
 );
 const packageJSON = JSON.parse(packageJSONText);
 
-const external = ["@turbowarp/jszip", "@turbowarp/json"];
-
-const headerPlugin = license({
-  banner: {
-    commentStyle: "ignored",
-    content: `/*!\n * SBDL v${packageJSON.version} <https://github.com/forkphorus/sb-downloader>\n *\n * ${fs.readFileSync("LICENSE", "utf-8").replace(/\n/g, "\n * ")}\n */`,
-  },
-});
+const commonExternal = [
+  "@turbowarp/jszip",
+  "@turbowarp/json",
+  "undici",
+  "fs",
+  "path",
+  "os",
+  "node:crypto",
+  "node:fs",
+  "node:fs/promises",
+  "node:path",
+];
 
 const cliHeaderPlugin = license({
   banner: {
     commentStyle: "none",
-    content: `#!/usr/bin/env node\n/*!\n * SBDL v${packageJSON.version} <https://github.com/forkphorus/sb-downloader>\n *\n * ${fs.readFileSync("LICENSE", "utf-8").replace(/\n/g, "\n * ")}\n */`,
+    content: `#!/usr/bin/env node\n/*!\n * sc-dlp v${packageJSON.version} <https://github.com/rbstxt/sc-dlp>\n *\n * ${fs.readFileSync("LICENSE", "utf-8").replace(/\n/g, "\n * ")}\n */`,
   },
 });
 
+const tsPlugin = () =>
+  typescript({
+    declaration: false,
+    declarationDir: undefined,
+  });
+
 export default [
   {
-    // For Node.js
+    // For Node.js (CJS & ESM)
     input: "src/export-node.ts",
-    output: {
-      file: "lib/bundle-node.cjs",
-      format: "cjs",
-    },
-    external,
-    plugins: [typescript()],
+    output: [
+      {
+        file: "lib/bundle-node.cjs",
+        format: "cjs",
+      },
+      {
+        file: "lib/bundle-node.mjs",
+        format: "es",
+      },
+    ],
+    external: commonExternal,
+    plugins: [tsPlugin()],
   },
   {
     // CLI for Node.js
@@ -46,13 +60,12 @@ export default [
       format: "cjs",
     },
     external: [
-      ...external,
-      "node:fs",
-      "node:fs/promises",
-      "node:path",
+      ...commonExternal,
       "kleur",
       "cli-progress",
+      "prompts",
+      "pako",
     ],
-    plugins: [typescript(), cliHeaderPlugin],
+    plugins: [tsPlugin(), cliHeaderPlugin],
   },
 ];

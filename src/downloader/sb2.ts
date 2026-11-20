@@ -28,7 +28,7 @@ export const downloadScratch2 = async (projectData: SB2Project, zip: JSZip | nul
     /** @type {SB2Sprite[]} */
     const targets = [
         projectData as (SB2Project | SB2Sprite),
-        ...projectData.children.filter((c: any) => !c.listName && !c.target) as SB2Sprite[],
+        ...(projectData.children || []).filter((c: any) => !c.listName && !c.target) as SB2Sprite[],
     ];
     const costumes = flat(targets.map((i) => i.costumes || []));
     const sounds = flat(targets.map((i) => i.sounds || []));
@@ -103,6 +103,7 @@ export const downloadScratch2 = async (projectData: SB2Project, zip: JSZip | nul
     }
 
     const progressTarget = makeAssetProgressTarget(options, needToFetch.length);
+    let md5Updated = false;
 
     const fetchAndStoreAsset = async (md5ext: string, id: number): Promise<{ path: string, data: ArrayBuffer } | null> => {
         progressTarget.fetching(md5ext);
@@ -110,8 +111,10 @@ export const downloadScratch2 = async (projectData: SB2Project, zip: JSZip | nul
         const arrayBuffer = await fetchAsset(
             options.assetHost!.replace("$id", assetId),
             {
+                signal: options.signal,
                 retries: options.assetRetries,
                 headers: environment.headers,
+                onWarning: options.onWarning,
             },
         );
         progressTarget.fetched(md5ext);
@@ -119,13 +122,16 @@ export const downloadScratch2 = async (projectData: SB2Project, zip: JSZip | nul
 
         const calculatedMd5 = calculateMD5(arrayBuffer);
         const originalMd5 = md5ext.split(".")[0];
+        const ext = getExtension(md5ext);
+        const newMd5ext = ext ? `${calculatedMd5}.${ext}` : calculatedMd5;
 
         if (calculatedMd5 !== originalMd5) {
+            md5Updated = true;
             // Update project JSON
             for (const target of targets) {
                 for (const costume of target.costumes || []) {
                     if (costume.baseLayerMD5 === md5ext) {
-                        costume.baseLayerMD5 = `${calculatedMd5}.${getExtension(md5ext)}`;
+                        costume.baseLayerMD5 = newMd5ext;
                     }
                     if (costume.textLayerMD5 === md5ext) {
                         costume.textLayerMD5 = `${calculatedMd5}.png`;
@@ -133,13 +139,13 @@ export const downloadScratch2 = async (projectData: SB2Project, zip: JSZip | nul
                 }
                 for (const sound of target.sounds || []) {
                     if (sound.md5 === md5ext) {
-                        sound.md5 = `${calculatedMd5}.${getExtension(md5ext)}`;
+                        sound.md5 = newMd5ext;
                     }
                 }
             }
         }
 
-        const path = `${id}.${getExtension(md5ext)}`;
+        const path = `${id}.${ext}`;
         return { path, data: arrayBuffer };
     };
 
@@ -147,7 +153,7 @@ export const downloadScratch2 = async (projectData: SB2Project, zip: JSZip | nul
         ? []
         : (await Promise.all(needToFetch.map((md5ext) => fetchAndStoreAsset(md5ext, md5extToId.get(md5ext)!)))).filter((i) => i !== null);
 
-    const modifiedJSON = await storeProjectJSON(zipInstance, "sb2", projectData, options);
+    const modifiedJSON = await storeProjectJSON(zipInstance, "sb2", projectData, options, md5Updated);
 
     for (const file of filesToAdd) {
         if (file) {

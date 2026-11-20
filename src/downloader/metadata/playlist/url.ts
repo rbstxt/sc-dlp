@@ -1,5 +1,5 @@
 import { Options, ProjectSummary } from "../../types.js";
-import { fetchProjectList, fetchAllProjectPages } from "../list.js";
+import { fetchAllProjectPages } from "../list.js";
 import { fetchLovesList } from "../user.js";
 import { fetchFeaturedProjects } from "./featured.js";
 import { fetchMyStuffProjects } from "./mystuff.js";
@@ -16,14 +16,16 @@ export const handleURL = async (url: string, options?: Options): Promise<Project
     if (match) {
         const username = match[1];
         const pageMatch = url.match(/[?&]page=(\d+)/);
-        const fetchOptions = { ...options };
+        const fetchOptions: Options = { ...options };
         if (pageMatch) {
             const page = parseInt(pageMatch[1], 10);
             fetchOptions.offset = (page - 1) * 60;
             fetchOptions.limit = 60;
+            delete fetchOptions.page;
         } else if (options?.page) {
             fetchOptions.offset = (options.page - 1) * 60;
             fetchOptions.limit = 60;
+            delete fetchOptions.page;
         }
         const apiBase = loadConfig().urls.api;
         return fetchAllProjectPages(
@@ -39,14 +41,16 @@ export const handleURL = async (url: string, options?: Options): Promise<Project
     if (match) {
         const username = match[1];
         const pageMatch = url.match(/[?&]page=(\d+)/);
-        const fetchOptions = { ...options };
+        const fetchOptions: Options = { ...options };
         if (pageMatch) {
             const page = parseInt(pageMatch[1], 10);
             fetchOptions.offset = (page - 1) * 60;
             fetchOptions.limit = 60;
+            delete fetchOptions.page;
         } else if (options?.page) {
             fetchOptions.offset = (options.page - 1) * 60;
             fetchOptions.limit = 60;
+            delete fetchOptions.page;
         }
         const apiBase = loadConfig().urls.api;
         return fetchAllProjectPages(
@@ -62,14 +66,14 @@ export const handleURL = async (url: string, options?: Options): Promise<Project
     if (match) {
         const id = match[1];
         const apiBase = loadConfig().urls.api;
-        return fetchProjectList(
+        return fetchAllProjectPages(
             `${apiBase}/projects/${id}/remixes`,
             options,
         );
     }
 
     // Studio projects
-    match = url.match(/^https?:\/\/scratch\.mit.edu\/studios\/(\d+)\/?/);
+    match = url.match(/^https?:\/\/scratch\.mit\.edu\/studios\/(\d+)\/?/);
     if (match) {
         const studioId = match[1];
         const apiBase = loadConfig().urls.api;
@@ -79,19 +83,22 @@ export const handleURL = async (url: string, options?: Options): Promise<Project
         );
     }
 
-    // Search projects
-    match = url.match(
-        /^https?:\/\/scratch\.mit\.edu\/search\/projects\/?\?q=([^&]+)/,
-    );
-    if (match) {
-        const query = match[1];
-        const modeMatch = url.match(/[?&]mode=([^&]+)/);
-        const mode = modeMatch ? modeMatch[1] : "trending";
-        const apiBase = loadConfig().urls.api;
-        return fetchAllProjectPages(
-            `${apiBase}/search/projects?q=${query}&mode=${mode}`,
-            options,
-        );
+    // Search projects (handles query params in any order)
+    if (/^https?:\/\/scratch\.mit\.edu\/search\/projects\/?\?/i.test(url)) {
+        try {
+            const parsed = new URL(url);
+            const query = parsed.searchParams.get("q");
+            if (query !== null) {
+                const mode = parsed.searchParams.get("mode") || "trending";
+                const apiBase = loadConfig().urls.api;
+                return fetchAllProjectPages(
+                    `${apiBase}/search/projects?q=${encodeURIComponent(query)}&mode=${encodeURIComponent(mode)}`,
+                    options,
+                );
+            }
+        } catch {
+            // Fall through if URL parsing fails
+        }
     }
 
     // Explore projects

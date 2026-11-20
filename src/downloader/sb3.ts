@@ -39,6 +39,7 @@ export const downloadScratch3 = async (projectData: SB3Project, zip: JSZip | nul
 
     const assetsToDownload = prepareAssets([...costumes, ...sounds]);
     const progressTarget = makeAssetProgressTarget(options, assetsToDownload.length);
+    let md5Updated = false;
 
     /**
      * @param {string} md5ext
@@ -56,6 +57,7 @@ export const downloadScratch3 = async (projectData: SB3Project, zip: JSZip | nul
                 signal: options.signal,
                 retries: options.assetRetries,
                 headers: environment.headers,
+                onWarning: options.onWarning,
             },
         );
 
@@ -72,6 +74,7 @@ export const downloadScratch3 = async (projectData: SB3Project, zip: JSZip | nul
         let finalMd5ext = md5ext;
 
         if (calculatedMd5 !== originalMd5) {
+            md5Updated = true;
             finalMd5ext = calculatedMd5 + extension;
 
             // Update project JSON to point to the new MD5
@@ -96,7 +99,7 @@ export const downloadScratch3 = async (projectData: SB3Project, zip: JSZip | nul
         ? []
         : (await Promise.all(assetsToDownload.map(addFile))).filter((file) => file !== null);
 
-    const modifiedJSON = await storeProjectJSON(zipInstance, "sb3", projectData, options);
+    const modifiedJSON = await storeProjectJSON(zipInstance, "sb3", projectData, options, md5Updated);
 
     // Add files to the zip at the end so the order will be consistent.
     for (const file of filesToAdd) {

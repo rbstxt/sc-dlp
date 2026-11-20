@@ -23,21 +23,21 @@ export const getProjectMetadata = async (id: string | number, options?: Options)
         }
         try {
             const headers: Record<string, string> = { ...environment.headers };
-            const sessionId = options.sessionId || config.sessionId;
-            const token = options.token || config.token;
 
-            if (token) {
-                headers["x-token"] = token;
-            }
-            if (sessionId) {
-                headers["Cookie"] = `scratchsessionsid=${sessionId}; scratchcsrftoken=a; scratchlanguage=en`;
-                headers["x-csrftoken"] = "a";
-                headers["x-requested-with"] = "XMLHttpRequest";
-                headers["Referer"] = config.urls.site.replace("/site-api", "/");
-            }
-            if (options.projectToken) {
-                // For direct metadata fetch if allowed? 
-                // Actually metadata fetch doesn't usually take project_token, but let's see.
+            // Never send authentication credentials to third-party CORS trampoline proxies.
+            if (environment.canAccessScratchAPI) {
+                const sessionId = options.sessionId || config.sessionId;
+                const token = options.token || config.token;
+
+                if (token) {
+                    headers["x-token"] = token;
+                }
+                if (sessionId) {
+                    headers["Cookie"] = `scratchsessionsid=${sessionId}; scratchcsrftoken=a; scratchlanguage=en`;
+                    headers["x-csrftoken"] = "a";
+                    headers["x-requested-with"] = "XMLHttpRequest";
+                    headers["Referer"] = config.urls.site.replace("/site-api", "/");
+                }
             }
             const response = await fetch(url, {
                 signal: options.signal,
@@ -56,7 +56,7 @@ export const getProjectMetadata = async (id: string | number, options?: Options)
         } catch (e) {
             if (e instanceof CanNotAccessProjectError || isAbortError(e)) {
                 throw e;
-            } else {
+            } else if (!firstError) {
                 firstError = e;
             }
         }
@@ -65,9 +65,19 @@ export const getProjectMetadata = async (id: string | number, options?: Options)
 };
 
 export const getProjectTitleFromURL = (url: string) => {
-    const match = url.match(/\/([^\/]+)\.sb[2|3]?$/);
+    let pathname = url;
+    try {
+        pathname = new URL(url).pathname;
+    } catch {
+        pathname = url.split(/[?#]/)[0];
+    }
+    const match = pathname.match(/\/([^\/]+)\.sb[23]?$/i);
     if (match) {
-        return match[1];
+        try {
+            return decodeURIComponent(match[1]);
+        } catch {
+            return match[1];
+        }
     }
     return "";
 };

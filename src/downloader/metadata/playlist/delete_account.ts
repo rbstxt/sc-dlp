@@ -1,9 +1,11 @@
 import { Options, ProjectSummary } from "../../types.js";
 import { fetchWithProxy as fetch } from "../../../fetch-wrapper.js";
 import environment from "../../../environment.js";
+import { loadConfig } from "../../../cli/config.js";
 
 export const fetchDeleteAccountProjects = async (options?: Options): Promise<ProjectSummary[]> => {
-    const url = "https://scratch.mit.edu/accounts/settings/delete_account_confirmation/";
+    const siteBase = loadConfig().urls.site.replace(/\/site-api\/?$/, "");
+    const url = `${siteBase}/accounts/settings/delete_account_confirmation/`;
     const headers: Record<string, string> = { ...environment.headers };
 
     if (!options?.sessionId) {
@@ -35,7 +37,7 @@ export const fetchDeleteAccountProjects = async (options?: Options): Promise<Pro
         if (!seenIds.has(id)) {
             seenIds.add(id);
             projects.push({
-                id: id as any,
+                id: parseInt(id, 10),
                 title: "", // Title is not easily available in the same way without more parsing
                 author: "unknown",
             });

@@ -10,7 +10,13 @@ import { throwIfAborted } from "./utils.js";
  * @param {Options} options
  * @returns {Promise<boolean>} True if the zip was modified
  */
-export const storeProjectJSON = async (zip: JSZip, type: ProjectType, projectData: any, options: Options): Promise<boolean> => {
+export const storeProjectJSON = async (
+    zip: JSZip,
+    type: ProjectType,
+    projectData: any,
+    options: Options,
+    forceOverwrite = false
+): Promise<boolean> => {
     if (options.processJSON) {
         const newData = await options.processJSON(type, projectData);
         throwIfAborted(options);
@@ -21,9 +27,10 @@ export const storeProjectJSON = async (zip: JSZip, type: ProjectType, projectDat
         }
     }
 
-    // If project.json is already in the zip, don't overwrite it as that would lose
-    // possibly interesting data from sb2 projects with comments in the JSON.
-    if (!zip.file("project.json")) {
+    // If project.json is already in the zip, don't overwrite it unless required
+    // (e.g. MD5 hash rewriting modified asset references), as overwriting would
+    // lose possibly interesting data from sb2 projects with comments in the JSON.
+    if (forceOverwrite || !zip.file("project.json")) {
         zip.file("project.json", ExtendedJSON.stringify(projectData));
         return true;
     }

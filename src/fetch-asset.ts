@@ -1,5 +1,5 @@
 import { fetchWithProxy as fetch } from "./fetch-wrapper.js";
-import { HTTPError } from "./errors.js";
+import { AbortError, HTTPError } from "./errors.js";
 
 // Wrapper around fetch() to make asset downloading more reliable.
 //  - Maximum number of concurrent fetch() is limited and queued. Chrome in particular
@@ -11,19 +11,45 @@ import { HTTPError } from "./errors.js";
 // Originally based on https://github.com/TurboWarp/scratch-storage/blob/develop/src/safer-fetch.js
 
 let currentFetches = 0;
-type PendingFetch = [(value: ArrayBuffer | null | PromiseLike<ArrayBuffer | null>) => void, string, FetchAssetOptions | undefined];
+type PendingFetch = [
+  (value: ArrayBuffer | null | PromiseLike<ArrayBuffer | null>) => void,
+  (reason?: any) => void,
+  string,
+  FetchAssetOptions | undefined
+];
 const queue: PendingFetch[] = [];
 
 const DEFAULT_MAX_ATTEMPTS = 5;
 const MAX_CONCURRENT = 100;
 const RETRY_DELAY = 2000;
 
+const sleepWithAbort = (ms: number, signal?: AbortSignal | null): Promise<void> => {
+  if (signal?.aborted) {
+    return Promise.reject(new AbortError());
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new AbortError());
+    };
+    const timer = setTimeout(() => {
+      if (signal) {
+        signal.removeEventListener("abort", onAbort);
+      }
+      resolve();
+    }, ms);
+    if (signal) {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
+};
+
 const finishedFetch = () => {
   currentFetches--;
   checkStartNextFetch();
 };
 
-const startNextFetch = ([resolve, url, options]: PendingFetch) => {
+const startNextFetch = ([resolve, reject, url, options]: PendingFetch) => {
   let firstError: any;
   let attempts = 0;
   const maxAttempts =
@@ -31,8 +57,19 @@ const startNextFetch = ([resolve, url, options]: PendingFetch) => {
       ? options.retries
       : DEFAULT_MAX_ATTEMPTS;
 
+  const { retries: _retries, onWarning, ...fetchOptions } = options || {};
+  const warn = (msg: string, err?: any) => {
+    if (onWarning) {
+      onWarning(msg);
+    } else if (err !== undefined) {
+      console.warn(msg, err);
+    } else {
+      console.warn(msg);
+    }
+  };
+
   const attemptToFetch = (): Promise<ArrayBuffer | null> =>
-    fetch(url, options)
+    fetch(url, fetchOptions)
       .then((res) => {
         if (res.ok) {
           return res.arrayBuffer();
@@ -48,13 +85,14 @@ const startNextFetch = ([resolve, url, options]: PendingFetch) => {
         throw new HTTPError(url, res.status);
       })
       .then((buffer) => {
-        finishedFetch();
+        if (buffer instanceof ArrayBuffer) {
+          assetCache.set(url, buffer);
+        }
         return buffer;
       })
       .catch((error) => {
         if (error && error.name === "AbortError") {
           // The error we throw here must be an AbortError.
-          finishedFetch();
           throw error;
         }
 
@@ -64,20 +102,19 @@ const startNextFetch = ([resolve, url, options]: PendingFetch) => {
 
         if (attempts < maxAttempts) {
           attempts++;
-          // Concise logging for transient failures
-          console.warn(`[retry ${attempts}/${maxAttempts}] Failed to fetch ${url}: ${error.message || error}`);
+          warn(`[retry ${attempts}/${maxAttempts}] Failed to fetch ${url}: ${error?.message || error}`);
 
-          return new Promise((cb) =>
-            setTimeout(cb, (attempts + Math.random() - 1) * RETRY_DELAY),
+          return sleepWithAbort(
+            (attempts + Math.random() - 1) * RETRY_DELAY,
+            fetchOptions.signal
           ).then(attemptToFetch);
         }
 
-        console.warn(`Attempt to fetch ${url} failed completely after ${maxAttempts} retries`, error);
-        finishedFetch();
+        warn(`Attempt to fetch ${url} failed completely after ${maxAttempts} retries`, error);
         throw new Error(`Failed to fetch ${url} after ${maxAttempts} retries: ${firstError}`);
       });
 
-  return resolve(attemptToFetch());
+  attemptToFetch().finally(finishedFetch).then(resolve, reject);
 };
 
 const findNextFetch = (): PendingFetch | null => {
@@ -86,8 +123,9 @@ const findNextFetch = (): PendingFetch | null => {
       return null;
     }
     const next = queue.shift()!;
-    const options = next[2];
+    const options = next[3];
     if (options && options.signal && options.signal.aborted) {
+      next[1](new AbortError());
       continue;
     }
     return next;
@@ -95,17 +133,19 @@ const findNextFetch = (): PendingFetch | null => {
 };
 
 const checkStartNextFetch = () => {
-  if (currentFetches < MAX_CONCURRENT) {
+  while (currentFetches < MAX_CONCURRENT) {
     const nextFetch = findNextFetch();
-    if (nextFetch) {
-      currentFetches++;
-      startNextFetch(nextFetch);
+    if (!nextFetch) {
+      break;
     }
+    currentFetches++;
+    startNextFetch(nextFetch);
   }
 };
 
 export interface FetchAssetOptions extends RequestInit {
   retries?: number;
+  onWarning?: (message: string) => void;
 }
 
 const assetCache = new Map<string, ArrayBuffer>();
@@ -120,22 +160,27 @@ export const clearAssetCache = () => {
  * @returns ArrayBuffer if loaded. null if does not exist. Rejects if unexpected error.
  */
 const fetchAsset = (url: string, options?: FetchAssetOptions): Promise<ArrayBuffer | null> => {
+  if (options?.signal?.aborted) {
+    return Promise.reject(new AbortError());
+  }
   if (assetCache.has(url)) {
     return Promise.resolve(assetCache.get(url)!);
   }
-  return new Promise((resolve) => {
-    queue.push([
-      (bufferOrPromise) => {
-        if (bufferOrPromise instanceof ArrayBuffer) {
-          assetCache.set(url, bufferOrPromise);
-        } else if (bufferOrPromise instanceof Uint8Array) {
-          // Should be ArrayBuffer from arrayBuffer() call
+  return new Promise((resolve, reject) => {
+    const entry: PendingFetch = [resolve, reject, url, options];
+    queue.push(entry);
+
+    if (options?.signal) {
+      const onAbort = () => {
+        const idx = queue.indexOf(entry);
+        if (idx !== -1) {
+          queue.splice(idx, 1);
+          reject(new AbortError());
         }
-        resolve(bufferOrPromise);
-      },
-      url,
-      options,
-    ]);
+      };
+      options.signal.addEventListener("abort", onAbort, { once: true });
+    }
+
     checkStartNextFetch();
   });
 };

@@ -2,11 +2,11 @@ import prompts from "prompts";
 import { fetchWithProxy as fetch } from "../../fetch-wrapper.js";
 import kleur from "kleur";
 import { saveConfig, loadConfig } from "../config.js";
-import { logout } from "./logout";
-import { parseSession } from "./session";
+import { logout } from "./logout.js";
+import { parseSession } from "./session.js";
 
 export async function login() {
-    const config = loadConfig();
+    let config = loadConfig();
     if (config.username || config.sessionId || config.token) {
         const { confirm } = await prompts({
             type: 'confirm',
@@ -16,7 +16,9 @@ export async function login() {
         });
 
         if (!confirm) return;
-        await logout();
+        const loggedOut = await logout(true);
+        if (!loggedOut) return;
+        config = loadConfig();
     }
 
     const response = await prompts({
@@ -67,14 +69,25 @@ export async function login() {
                 "method": "POST",
             });
 
+            if (!res.ok) {
+                console.error(kleur.red(`Login failed with status ${res.status} (${res.statusText})`));
+                return;
+            }
+
             const data = await res.json() as any;
-            if (data[0] && data[0].success) {
+            if (Array.isArray(data) && data[0] && data[0].success) {
                 const user = data[0];
-                const setCookie = res.headers.get("set-cookie");
-                let sessionId = null;
-                if (setCookie) {
-                    const match = setCookie.match(/scratchsessionsid=([^;]+)/);
-                    if (match) sessionId = match[1];
+                const rawCookies: string[] =
+                    typeof (res.headers as any).getSetCookie === "function"
+                        ? (res.headers as any).getSetCookie()
+                        : (res.headers.get("set-cookie") ? [res.headers.get("set-cookie")!] : []);
+                let sessionId: string | null = null;
+                for (const cookieHeader of rawCookies) {
+                    const match = cookieHeader.match(/scratchsessionsid=([^;]+)/);
+                    if (match) {
+                        sessionId = match[1].replace(/^"|"$/g, "");
+                        break;
+                    }
                 }
 
                 saveConfig({

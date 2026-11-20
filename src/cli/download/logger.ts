@@ -1,13 +1,18 @@
 import kleur from "kleur";
-import * as cliProgress from "cli-progress";
 import { ParsedArgs } from "../types.js";
 
-export const createLogger = (multibar: cliProgress.MultiBar, parsedArgs: ParsedArgs) => {
+export interface LogSink {
+    log(msg: string): void;
+}
+
+export const createLogger = (sink: LogSink, parsedArgs: ParsedArgs, projectTag?: string) => {
+    const tagSegment = projectTag ? `${kleur.dim(`[${projectTag}]`)} ` : "";
+
     const logPersistent = (msg: string) => {
-        multibar.log(msg + "\n");
+        sink.log(msg + "\n");
     };
 
-    const formatPrefix = (colorFn: any, label: string) => {
+    const formatPrefix = (colorFn: (s: string) => string, label: string) => {
         const prefix = `[${label}]`;
         const padded = prefix.padEnd(12);
         return colorFn(padded);
@@ -15,17 +20,17 @@ export const createLogger = (multibar: cliProgress.MultiBar, parsedArgs: ParsedA
 
     return {
         logPersistent,
-        logMetadata: (msg: string) => logPersistent(`${formatPrefix(kleur.magenta, "metadata")} ${msg}`),
-        logAssets: (msg: string) => logPersistent(`${formatPrefix(kleur.cyan, "assets")} ${msg}`),
-        logCompress: (msg: string) => logPersistent(`${formatPrefix(kleur.yellow, "compress")} ${msg}`),
-        logInfo: (msg: string) => logPersistent(`${formatPrefix(kleur.blue, "info")} ${msg}`),
-        logMapping: (msg: string) => logPersistent(`${formatPrefix(kleur.magenta, "mapping")} ${msg}`),
-        logSuccess: (msg: string) => logPersistent(`${formatPrefix(kleur.green, "success")} ${msg}`),
-        logWarning: (msg: string) => logPersistent(`${formatPrefix(kleur.yellow, "warning")} ${msg}`),
-        logErrorMsg: (msg: string) => logPersistent(`${formatPrefix(kleur.red, "error")} ${msg}`),
+        logMetadata: (msg: string) => logPersistent(`${formatPrefix(kleur.magenta, "metadata")} ${tagSegment}${msg}`),
+        logAssets: (msg: string) => logPersistent(`${formatPrefix(kleur.cyan, "assets")} ${tagSegment}${msg}`),
+        logCompress: (msg: string) => logPersistent(`${formatPrefix(kleur.yellow, "compress")} ${tagSegment}${msg}`),
+        logInfo: (msg: string) => logPersistent(`${formatPrefix(kleur.blue, "info")} ${tagSegment}${msg}`),
+        logMapping: (msg: string) => logPersistent(`${formatPrefix(kleur.magenta, "mapping")} ${tagSegment}${msg}`),
+        logSuccess: (msg: string) => logPersistent(`${formatPrefix(kleur.green, "success")} ${tagSegment}${msg}`),
+        logWarning: (msg: string) => logPersistent(`${formatPrefix(kleur.yellow, "warning")} ${tagSegment}${msg}`),
+        logErrorMsg: (msg: string) => logPersistent(`${formatPrefix(kleur.red, "error")} ${tagSegment}${msg}`),
         logDebug: (msg: string) => {
             if (parsedArgs.verbose) {
-                logPersistent(`${kleur.gray("[debug]")} ${msg}`);
+                logPersistent(`${kleur.gray("[debug]".padEnd(12))} ${tagSegment}${msg}`);
             }
         }
     };

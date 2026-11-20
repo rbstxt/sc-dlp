@@ -27,6 +27,12 @@ export const fetchFeaturedProjects = async (url: string, options?: Options): Pro
     const categoryMap: Record<string, string[]> = {
         'featured': ['community_featured_projects'],
         'featured/featured': ['community_featured_projects'],
+        'featured/curated': ['curator_top_projects'],
+        'featured/curator': ['curator_top_projects'],
+        'featured/top': ['community_most_loved_projects'],
+        'featured/loved': ['community_most_loved_projects'],
+        'featured/toploved': ['community_most_loved_projects'],
+        'featured/mostloved': ['community_most_loved_projects'],
         'featured/mostremixed': ['community_most_remixed_projects'],
         'featured/remix': ['community_most_remixed_projects'],
         'featured/remixed': ['community_most_remixed_projects'],

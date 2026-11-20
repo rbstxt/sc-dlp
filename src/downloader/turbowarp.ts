@@ -96,14 +96,20 @@ export const getTurboWarpMetadata = async (id: string, options?: Options): Promi
 export const downloadTurboWarpProject = async (id: string, options?: Options): Promise<DownloadedProject> => {
     options = parseOptions(options);
 
-    if (options.onProgress) {
-        options.onProgress("metadata", 0, 1);
-    }
+    let meta = options.prefetchedMetadata && options.prefetchedMetadata.assetMapping
+        ? (options.prefetchedMetadata as ProjectMetadata & { assetMapping: Record<string, string> })
+        : undefined;
 
-    const meta = await getTurboWarpMetadata(id, options);
+    if (!meta) {
+        if (options.onProgress) {
+            options.onProgress("metadata", 0, 1);
+        }
 
-    if (options.onProgress) {
-        options.onProgress("metadata", 1, 1, meta.title);
+        meta = await getTurboWarpMetadata(id, options);
+
+        if (options.onProgress) {
+            options.onProgress("metadata", 1, 1, meta.title);
+        }
     }
 
     const config = loadConfig();

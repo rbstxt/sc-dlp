@@ -38,13 +38,19 @@ can break core functionality or expose sensitive data. Only modify these if you 
 
     if (args.includes("--list")) {
         console.log(kleur.bold().cyan("\nCurrent Configuration:"));
+        const SENSITIVE_KEYS = new Set(["token", "sessionId"]);
         const printObj = (obj: any, prefix = "") => {
             for (const key in obj) {
+                const fullKey = `${prefix}${key}`;
                 const val = obj[key];
-                if (typeof val === "object" && val !== null) {
-                    printObj(val, `${prefix}${key}.`);
+                if (Array.isArray(val)) {
+                    console.log(`  ${kleur.yellow(fullKey.padEnd(24))} ${val.join(", ")}`);
+                } else if (typeof val === "object" && val !== null) {
+                    printObj(val, `${fullKey}.`);
+                } else if (SENSITIVE_KEYS.has(fullKey) && val) {
+                    console.log(`  ${kleur.yellow(fullKey.padEnd(24))} ${kleur.dim("******** (set)")}`);
                 } else {
-                    console.log(`  ${kleur.yellow((prefix + key).padEnd(20))} ${val === null ? kleur.dim("null") : val}`);
+                    console.log(`  ${kleur.yellow(fullKey.padEnd(24))} ${val === null ? kleur.dim("null") : val}`);
                 }
             }
         };
@@ -73,13 +79,13 @@ can break core functionality or expose sensitive data. Only modify these if you 
     const setIdx = args.indexOf("--set");
     if (setIdx !== -1 && args[setIdx + 1]) {
         const pair = args[setIdx + 1];
-        const [key, ...valParts] = pair.split("=");
-        const value = valParts.join("=");
-
-        if (!key || value === undefined) {
+        const eqIdx = pair.indexOf("=");
+        if (eqIdx <= 0) {
             console.error(kleur.red("Invalid format. Use key=value"));
             return;
         }
+        const key = pair.slice(0, eqIdx);
+        const value = pair.slice(eqIdx + 1);
 
         try {
             await updateConfigValue(config, key, value);

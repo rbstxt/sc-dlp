@@ -65,12 +65,15 @@ export const fetchAllProjectPages = async (baseUrl: string, options: Options = {
         offset = (options.page - 1) * limit;
     }
 
-    const maxLimit = options.limit || Infinity;
-    const concurrency = options.concurrency || 1;
+    const maxLimit = options.limit ?? Infinity;
+    const concurrency = Math.max(1, options.concurrency || 1);
     let reachedEnd = false;
 
     while (allProjects.length < maxLimit && !reachedEnd) {
-        const batchSize = Math.min(concurrency, Math.ceil((maxLimit - allProjects.length) / limit));
+        const remaining = maxLimit - allProjects.length;
+        const batchSize = options.page
+            ? 1
+            : Math.min(concurrency, Math.ceil(remaining / limit));
         const promises = [];
 
         for (let i = 0; i < batchSize; i++) {
@@ -91,10 +94,11 @@ export const fetchAllProjectPages = async (baseUrl: string, options: Options = {
         const results = await Promise.all(promises);
         for (let i = 0; i < results.length; i++) {
             const projects = results[i];
+            const prevLength = allProjects.length;
             allProjects = allProjects.concat(projects);
 
             if (options.onProgress) {
-                options.onProgress('metadata', allProjects.length, 0);
+                options.onProgress('metadata', Math.min(allProjects.length, maxLimit), 0);
             }
 
             if (options.page) {
@@ -102,7 +106,7 @@ export const fetchAllProjectPages = async (baseUrl: string, options: Options = {
                 break;
             }
 
-            const expectedLimit = Math.min(limit, maxLimit - (allProjects.length - projects.length));
+            const expectedLimit = Math.min(limit, maxLimit - prevLength);
             if (projects.length < expectedLimit) {
                 reachedEnd = true;
                 break;
@@ -112,5 +116,5 @@ export const fetchAllProjectPages = async (baseUrl: string, options: Options = {
         if (options.page) break;
         offset += results.length * limit;
     }
-    return allProjects;
+    return allProjects.length > maxLimit ? allProjects.slice(0, maxLimit) : allProjects;
 };

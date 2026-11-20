@@ -16,8 +16,22 @@ A high-performance command-line tool for downloading Scratch and TurboWarp proje
 
 ## Installation
 
+### From npm
+
 ```bash
-git clone https://github.com/sc-dlp/sc-dlp.git
+npm install -g sc-dlp
+```
+
+Or run directly with `npx`:
+
+```bash
+npx sc-dlp 60917032
+```
+
+### From source
+
+```bash
+git clone https://github.com/rbstxt/sc-dlp.git
 cd sc-dlp
 npm install
 npm run build

@@ -1,8 +1,6 @@
 import { Options, ProjectSummary } from "../../types.js";
-import { parseOptions } from "../../utils.js";
+import { HTTPError } from "../../../errors.js";
 import { fetchProjectList } from "../list.js";
-import { fetchWithProxy as fetch } from "../../../fetch-wrapper.js";
-
 import { loadConfig } from "../../../cli/config.js";
 
 export const fetchMyStuffProjects = async (url: string, options?: Options): Promise<ProjectSummary[]> => {
@@ -29,23 +27,30 @@ export const fetchMyStuffProjects = async (url: string, options?: Options): Prom
         apiEndpoint = `${siteApiBase}/projects/trashed/`;
     }
 
+    const maxLimit = options?.limit ?? Infinity;
     let allProjects: ProjectSummary[] = [];
     let page = options?.page || 1;
-    while (true) {
+    while (allProjects.length < maxLimit) {
         try {
             const pageUrl = `${apiEndpoint}${apiEndpoint.includes("?") ? "&" : "?"}page=${page}`;
             const projects = await fetchProjectList(pageUrl, options);
             if (projects.length === 0) break;
             allProjects = allProjects.concat(projects);
 
+            if (options?.onProgress) {
+                options.onProgress("metadata", Math.min(allProjects.length, maxLimit), 0);
+            }
+
             if (options?.page) break;
 
             page++;
-            const currentOptions = parseOptions(options);
-            if (currentOptions.limit && allProjects.length >= currentOptions.limit) break;
         } catch (e) {
-            break;
+            // Scratch's site-api returns 404 when requesting a page past the end
+            if (e instanceof HTTPError && e.status === 404 && page > 1) {
+                break;
+            }
+            throw e;
         }
     }
-    return allProjects;
+    return allProjects.length > maxLimit ? allProjects.slice(0, maxLimit) : allProjects;
 };

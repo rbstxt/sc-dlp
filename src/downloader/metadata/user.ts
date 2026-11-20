@@ -59,10 +59,25 @@ export const fetchLovesList = async (url: string, options?: Options): Promise<Pr
         if (projectsInPage.length === 0) break;
         allProjects = allProjects.concat(projectsInPage);
 
+        if (options.onProgress) {
+            const reported = options.limit !== undefined
+                ? Math.min(allProjects.length, options.limit)
+                : allProjects.length;
+            options.onProgress("metadata", reported, 0);
+        }
+
+        if (options.limit !== undefined && allProjects.length >= options.limit) {
+            return allProjects.slice(0, options.limit);
+        }
+
         if (hasPageParam || options.page) break; // Only fetch one page if specified or forced
 
-        // Check for next page
-        const nextMatch = html.match(/<a [^>]*?href="\?page=(\d+)"[^>]*>next[\s\S]*?<\/a>/i);
+        // Check for next page (language-agnostic rel="next" or next page number, fallback to English "next")
+        const nextPageNum = page + 1;
+        const nextMatch =
+            html.match(new RegExp(`<a [^>]*?href="\\?page=(${nextPageNum})"[^>]*>`, "i")) ||
+            html.match(/<a [^>]*?rel="next"[^>]*?href="\?page=(\d+)"[^>]*>/i) ||
+            html.match(/<a [^>]*?href="\?page=(\d+)"[^>]*>next[\s\S]*?<\/a>/i);
         if (nextMatch) {
             page = parseInt(nextMatch[1], 10);
             const baseUrl = url.split("?")[0];
@@ -70,11 +85,11 @@ export const fetchLovesList = async (url: string, options?: Options): Promise<Pr
         } else {
             break;
         }
-
-        if (options.limit && allProjects.length >= options.limit) break;
     }
 
-    return allProjects;
+    return options.limit !== undefined && allProjects.length > options.limit
+        ? allProjects.slice(0, options.limit)
+        : allProjects;
 };
 
 import { loadConfig } from "../../cli/config.js";

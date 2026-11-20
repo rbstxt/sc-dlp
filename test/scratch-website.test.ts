@@ -20,6 +20,6 @@ test('get metadata for unshared project', async () => {
     await SBDL.getProjectMetadata('721028192');
     expect.fail();
   } catch (e) {
-    expect((e as any).name, 'CanNotAccessProjectError');
+    expect((e as any).name).toBe('CanNotAccessProjectError');
   }
 }, 30000);
