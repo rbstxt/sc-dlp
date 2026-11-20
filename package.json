@@ -1,7 +1,7 @@
 {
   "name": "sc-dlp",
-  "version": "1.0.0",
-  "description": "A downloader for Scratch projects.",
+  "version": "1.0.1",
+  "description": "A high-performance CLI and Node.js library for downloading Scratch and TurboWarp projects.",
   "type": "module",
   "keywords": [
     "scratch",
